@@ -216,6 +216,7 @@ const DEFAULT_EXPENSE_CATEGORIES = [
 ];
 const DEFAULT_INCOME_CATEGORIES = [
   {name:'Sueldo', emoji:'💼'}, {name:'Freelance', emoji:'💻'}, {name:'Ventas', emoji:'🏷️'},
+  {name:'Préstamo', emoji:'🤝', loan:true},
   {name:'Regalos', emoji:'🎁'}, {name:'Otros ingresos', emoji:'➕'},
 ];
 const DEFAULT_ACCOUNTS = [
@@ -405,7 +406,7 @@ async function onCreateSpace(e){
   const memberId = uid(8);
   const categories = {};
   DEFAULT_EXPENSE_CATEGORIES.forEach(c=>{ categories[uid(8)] = {type:'expense', name:c.name, emoji:c.emoji}; });
-  DEFAULT_INCOME_CATEGORIES.forEach(c=>{ categories[uid(8)] = {type:'income', name:c.name, emoji:c.emoji}; });
+  DEFAULT_INCOME_CATEGORIES.forEach(c=>{ categories[uid(8)] = {type:'income', name:c.name, emoji:c.emoji, ...(c.loan?{loan:true}:{})}; });
   const accounts = {};
   DEFAULT_ACCOUNTS.forEach(a=>{ accounts[uid(8)] = {name:a.name, icon:a.icon, initialBalance:0}; });
   const members = { [memberId]: {name:memberName, color:MEMBER_COLORS[0]} };
@@ -518,6 +519,7 @@ function processRecurring(){
 
 /* ---------------- Derived data helpers ---------------- */
 function categoryById(id){ return (state.space?.categories||[]).find(c=>c.id===id); }
+function categoryIsLoan(id){ const c = categoryById(id); return !!(c && c.loan); }
 function accountById(id){ return (state.space?.accounts||[]).find(a=>a.id===id); }
 function memberById(id){ return (state.space?.members||[]).find(m=>m.id===id); }
 function accountBalance(accountId){
@@ -786,7 +788,8 @@ function renderGoalsDebts(){
           <div style="display:flex;justify-content:space-between;align-items:center;">
             <b>${escapeHtml(d.name)}</b>
             <div class="row-actions">
-              <button class="icon-btn" data-action="pay-debt" data-id="${d.id}">💵</button>
+              <button class="icon-btn" data-action="pay-debt" data-id="${d.id}" title="Registrar pago parcial">💵</button>
+              <button class="icon-btn" data-action="settle-debt" data-id="${d.id}" title="Saldar toda la deuda">✅</button>
               <button class="icon-btn" data-action="delete-debt" data-id="${d.id}">🗑️</button>
             </div>
           </div>
@@ -897,6 +900,7 @@ function modalTransactionForm(existing){
       <div class="field" data-field="category"><label>Categoría</label>
         <select name="categoryId">${categories.filter(c=>c.type===type).map(c=>`<option value="${c.id}" ${existing?.categoryId===c.id?'selected':''}>${c.emoji} ${escapeHtml(c.name)}</option>`).join('')}</select>
       </div>
+      <div class="field" data-field="lender" style="display:none;"><label>¿Quién te lo prestó?</label><input name="lenderName" value="${escapeHtml(existing?.lenderName||'')}" placeholder="Nombre"></div>
       <div class="field-row">
         <div class="field"><label id="label-account">Cuenta</label><select name="accountId">${accounts.map(a=>`<option value="${a.id}" ${existing?.accountId===a.id?'selected':''}>${escapeHtml(a.name)}</option>`).join('')}</select></div>
         <div class="field" data-field="toAccount" style="${type==='transfer'?'':'display:none;'}"><label>Cuenta destino</label><select name="toAccountId">${accounts.map(a=>`<option value="${a.id}" ${existing?.toAccountId===a.id?'selected':''}>${escapeHtml(a.name)}</option>`).join('')}</select></div>
@@ -1000,6 +1004,7 @@ function modalCategoryForm(){
       <div class="field"><label>Nombre</label><input name="name" required></div>
       <div class="field"><label>Emoji</label><input name="emoji" value="🏷️" maxlength="4"></div>
     </div>
+    <div class="field"><label style="display:flex;align-items:center;gap:6px;font-weight:600;"><input type="checkbox" name="loan" style="width:auto;">Es un préstamo (crea una deuda automáticamente al usarla en un ingreso)</label></div>
     <div class="modal-foot" style="padding:14px 0 0;"><button type="button" class="btn btn-outline" data-action="close-modal">Cancelar</button><button type="submit" class="btn btn-primary">Agregar</button></div>
   </form></div>`;
 }
@@ -1025,6 +1030,20 @@ function bindShell(){
   });
   document.getElementById('modal-root').addEventListener('click', onModalClick);
   document.getElementById('modal-root').addEventListener('submit', onModalSubmit);
+  document.getElementById('modal-root').addEventListener('change', onModalChange);
+}
+function onModalChange(e){
+  if(e.target.name==='categoryId'){
+    const form = e.target.closest('form');
+    if(form && form.dataset.form==='transaction') updateLenderFieldVisibility(form);
+  }
+}
+function updateLenderFieldVisibility(form){
+  if(!form) return;
+  const type = form.querySelector('input[name=type]')?.value;
+  const catId = form.querySelector('select[name=categoryId]')?.value;
+  const field = form.querySelector('[data-field=lender]');
+  if(field) field.style.display = (type==='income' && categoryIsLoan(catId)) ? '' : 'none';
 }
 function onShellChange(e){
   if(e.target.id==='f-account'){ state.filters.account = e.target.value; render(); }
@@ -1042,14 +1061,15 @@ function onShellClick(e){
   switch(action){
     case 'open-share': openModal(modalShare()); break;
     case 'copy-link': copyToClipboard(document.getElementById('share-url-input').value); break;
-    case 'new-transaction': openModal(modalTransactionForm(null)); break;
-    case 'edit-transaction': openModal(modalTransactionForm(state.transactions.find(t=>t.id===id))); break;
+    case 'new-transaction': openModal(modalTransactionForm(null)); updateLenderFieldVisibility(document.querySelector('form[data-form=transaction]')); break;
+    case 'edit-transaction': openModal(modalTransactionForm(state.transactions.find(t=>t.id===id))); updateLenderFieldVisibility(document.querySelector('form[data-form=transaction]')); break;
     case 'delete-transaction': if(confirm('¿Eliminar este movimiento?')) remove(spaceRef('transactions/'+id)); break;
     case 'new-goal': openModal(modalGoalForm(null)); break;
     case 'contribute-goal': openModal(modalContributeGoal(state.goals.find(g=>g.id===id))); break;
     case 'delete-goal': if(confirm('¿Eliminar esta meta?')) remove(spaceRef('goals/'+id)); break;
     case 'new-debt': openModal(modalDebtForm(null)); break;
     case 'pay-debt': openModal(modalPayDebt(state.debts.find(d=>d.id===id))); break;
+    case 'settle-debt': if(confirm('¿Marcar esta deuda como saldada por completo?')) update(spaceRef('debts/'+id), {remainingAmount:0}); break;
     case 'delete-debt': if(confirm('¿Eliminar esta deuda?')) remove(spaceRef('debts/'+id)); break;
     case 'copy-prev-budget': copyPrevBudget(); break;
     case 'new-recurring': openModal(modalRecurringForm(null)); break;
@@ -1085,6 +1105,7 @@ function onModalClick(e){
     if(toAccField) toAccField.style.display = type==='transfer' ? '' : 'none';
     const categories = state.space.categories||[];
     form.querySelector('select[name=categoryId]').innerHTML = categories.filter(c=>c.type===type).map(c=>`<option value="${c.id}">${c.emoji} ${escapeHtml(c.name)}</option>`).join('');
+    updateLenderFieldVisibility(form);
   }
 }
 function copyToClipboard(text){
@@ -1128,8 +1149,23 @@ async function onModalSubmit(e){
         memberId: fd.get('memberId') || null,
         note: fd.get('note') || '',
       };
-      if(id) await update(spaceRef('transactions/'+id), data);
-      else await set(spaceRef('transactions/'+uid(12)), {...data, createdAt: serverTimestamp()});
+      const isNewLoan = !id && data.type==='income' && categoryIsLoan(data.categoryId);
+      if(isNewLoan) data.lenderName = fd.get('lenderName') || '';
+      if(id){
+        await update(spaceRef('transactions/'+id), data);
+      } else {
+        const newTxId = uid(12);
+        await set(spaceRef('transactions/'+newTxId), {...data, createdAt: serverTimestamp()});
+        if(isNewLoan){
+          await set(spaceRef('debts/'+uid(10)), {
+            name: data.lenderName ? 'Préstamo de '+data.lenderName : 'Préstamo',
+            totalAmount: data.amount,
+            remainingAmount: data.amount,
+            monthlyPayment: null,
+            linkedTransactionId: newTxId,
+          });
+        }
+      }
     }
     if(formType==='goal'){
       const id = form.dataset.id;
@@ -1177,7 +1213,9 @@ async function onModalSubmit(e){
       await set(spaceRef('accounts/'+uid(8)), { name: fd.get('name'), icon:'💳', initialBalance: Number(fd.get('initialBalance')||0) });
     }
     if(formType==='category'){
-      await set(spaceRef('categories/'+uid(8)), { type: fd.get('type'), name: fd.get('name'), emoji: fd.get('emoji')||'🏷️' });
+      const catData = { type: fd.get('type'), name: fd.get('name'), emoji: fd.get('emoji')||'🏷️' };
+      if(fd.get('loan')==='on') catData.loan = true;
+      await set(spaceRef('categories/'+uid(8)), catData);
     }
     closeModal();
   }catch(err){

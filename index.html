@@ -212,7 +212,7 @@ const MEMBER_COLORS = ['#1F6F5C','#B9821F','#7A5A8A','#4A5C68','#B23B30','#2E7D4
 const DEFAULT_EXPENSE_CATEGORIES = [
   {name:'Alimentación', emoji:'🛒'}, {name:'Comidas afuera', emoji:'🍽️'}, {name:'Vivienda', emoji:'🏠'}, {name:'Transporte', emoji:'🚗'},
   {name:'Servicios', emoji:'💡'}, {name:'Salud', emoji:'💊'}, {name:'Educación', emoji:'📚'},
-  {name:'Ocio', emoji:'🎉'}, {name:'Ropa', emoji:'👕'}, {name:'Deudas', emoji:'💳'}, {name:'Otros gastos', emoji:'📦'},
+  {name:'Ocio', emoji:'🎉'}, {name:'Ropa', emoji:'👕'}, {name:'Deudas', emoji:'💳', debtCategory:true}, {name:'Otros gastos', emoji:'📦'},
 ];
 const DEFAULT_INCOME_CATEGORIES = [
   {name:'Sueldo', emoji:'💼'}, {name:'Freelance', emoji:'💻'}, {name:'Ventas', emoji:'🏷️'},
@@ -405,7 +405,7 @@ async function onCreateSpace(e){
   const spaceId = uid();
   const memberId = uid(8);
   const categories = {};
-  DEFAULT_EXPENSE_CATEGORIES.forEach(c=>{ categories[uid(8)] = {type:'expense', name:c.name, emoji:c.emoji}; });
+  DEFAULT_EXPENSE_CATEGORIES.forEach(c=>{ categories[uid(8)] = {type:'expense', name:c.name, emoji:c.emoji, ...(c.debtCategory?{debtCategory:true}:{})}; });
   DEFAULT_INCOME_CATEGORIES.forEach(c=>{ categories[uid(8)] = {type:'income', name:c.name, emoji:c.emoji, ...(c.loan?{loan:true}:{})}; });
   const accounts = {};
   DEFAULT_ACCOUNTS.forEach(a=>{ accounts[uid(8)] = {name:a.name, icon:a.icon, initialBalance:0}; });
@@ -946,10 +946,15 @@ function modalDebtForm(existing){
     <div class="modal-foot" style="padding:14px 0 0;"><button type="button" class="btn btn-outline" data-action="close-modal">Cancelar</button><button type="submit" class="btn btn-primary">Guardar</button></div>
   </form></div>`;
 }
-function modalPayDebt(d){
-  return `<div class="modal-head"><h3>Registrar pago de "${escapeHtml(d.name)}"</h3><button class="icon-btn" data-action="close-modal">✕</button></div>
+function modalPayDebt(d, prefillFull){
+  const accounts = state.space.accounts||[];
+  const remaining = d.remainingAmount ?? d.totalAmount;
+  const defaultAmount = prefillFull ? remaining : (d.monthlyPayment || remaining);
+  return `<div class="modal-head"><h3>${prefillFull?'Saldar':'Registrar pago de'} "${escapeHtml(d.name)}"</h3><button class="icon-btn" data-action="close-modal">✕</button></div>
   <div class="modal-body"><form data-form="debt-pay" data-id="${d.id}">
-    <div class="field"><label>Monto pagado</label><input type="number" min="0" step="1" name="amount" value="${d.monthlyPayment||''}" required></div>
+    <p style="font-size:12.5px;color:var(--text3);margin-bottom:12px;">Esto también se va a registrar como un gasto en "Deudas", descontado de la cuenta que elijas.</p>
+    <div class="field"><label>Monto pagado</label><input type="number" min="0" step="1" name="amount" value="${defaultAmount||''}" required></div>
+    <div class="field"><label>Cuenta desde la que pagás</label><select name="accountId">${accounts.map(a=>`<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('')}</select></div>
     <div class="modal-foot" style="padding:14px 0 0;"><button type="button" class="btn btn-outline" data-action="close-modal">Cancelar</button><button type="submit" class="btn btn-primary">Registrar</button></div>
   </form></div>`;
 }
@@ -1068,8 +1073,18 @@ function onShellClick(e){
     case 'contribute-goal': openModal(modalContributeGoal(state.goals.find(g=>g.id===id))); break;
     case 'delete-goal': if(confirm('¿Eliminar esta meta?')) remove(spaceRef('goals/'+id)); break;
     case 'new-debt': openModal(modalDebtForm(null)); break;
-    case 'pay-debt': openModal(modalPayDebt(state.debts.find(d=>d.id===id))); break;
-    case 'settle-debt': if(confirm('¿Marcar esta deuda como saldada por completo?')) update(spaceRef('debts/'+id), {remainingAmount:0}); break;
+    case 'pay-debt': {
+      const d = state.debts.find(x=>x.id===id);
+      if((d.remainingAmount??d.totalAmount)<=0){ alert('Esta deuda ya está saldada.'); break; }
+      openModal(modalPayDebt(d, false));
+      break;
+    }
+    case 'settle-debt': {
+      const d = state.debts.find(x=>x.id===id);
+      if((d.remainingAmount??d.totalAmount)<=0){ alert('Esta deuda ya está saldada.'); break; }
+      openModal(modalPayDebt(d, true));
+      break;
+    }
     case 'delete-debt': if(confirm('¿Eliminar esta deuda?')) remove(spaceRef('debts/'+id)); break;
     case 'copy-prev-budget': copyPrevBudget(); break;
     case 'new-recurring': openModal(modalRecurringForm(null)); break;
@@ -1188,8 +1203,18 @@ async function onModalSubmit(e){
       const id = form.dataset.id;
       const d = state.debts.find(x=>x.id===id);
       const amount = Number(fd.get('amount'));
+      const accountId = fd.get('accountId');
       const remaining = Math.max(0, (d.remainingAmount??d.totalAmount) - amount);
-      await update(spaceRef('debts/'+id), { remainingAmount: remaining });
+      const debtCat = (state.space.categories||[]).find(c=>c.debtCategory);
+      await Promise.all([
+        update(spaceRef('debts/'+id), { remainingAmount: remaining }),
+        set(spaceRef('transactions/'+uid(12)), {
+          type:'expense', amount, date: todayStr(),
+          categoryId: debtCat ? debtCat.id : null,
+          accountId, toAccountId:null, memberId:null,
+          note: 'Pago deuda: '+d.name, linkedDebtId:id, createdAt: serverTimestamp(),
+        }),
+      ]);
     }
     if(formType==='recurring'){
       const id = form.dataset.id;

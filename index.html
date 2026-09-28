@@ -865,6 +865,11 @@ function renderGoalsDebts(){
           <div class="progress"><div style="width:${Math.min(pct*100,100)}%;background:var(--slate);"></div></div>
         </div>`;
       }).join('') : `<div class="empty">Sin deudas registradas</div>`}
+      ${state.debts.length ? `
+      <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);display:flex;gap:20px;flex-wrap:wrap;">
+        <div><div class="stat-label">Total adeudado</div><div class="stat-value neg">${fmtMoney(state.debts.reduce((s,d)=>s+(d.remainingAmount??d.totalAmount),0), currency())}</div></div>
+        <div><div class="stat-label">Total original</div><div class="stat-value">${fmtMoney(state.debts.reduce((s,d)=>s+d.totalAmount,0), currency())}</div></div>
+      </div>` : ''}
     </div>
   </div>`;
 }

@@ -154,6 +154,7 @@ tr:last-child td{border-bottom:none;}
 @keyframes spin{to{transform:rotate(360deg);}}
 
 .charts-row{display:grid;grid-template-columns:1.3fr 1fr;gap:14px;}
+.charts-row.charts-row-even{grid-template-columns:1fr 1fr;}
 @media (max-width:820px){.charts-row{grid-template-columns:1fr;}}
 .chart-box{position:relative;height:240px;}
 .legend-list{margin-top:10px;display:flex;flex-direction:column;gap:7px;max-height:180px;overflow-y:auto;}
@@ -648,23 +649,6 @@ function renderDashboard(){
     <div class="card"><div class="stat-label">Balance del mes</div><div class="stat-value ${mt.balance>=0?'pos':'neg'}">${fmtMoney(mt.balance, currency())}</div></div>
   </div>
 
-  ${pendingRecurring.length ? `
-  <div class="card">
-    <div class="section-title">🔁 Recurrentes pendientes <span class="hint">${monthLabel(monthNow())}</span></div>
-    ${pendingRecurring.map(({r,info})=>{
-      const cat = categoryById(r.categoryId);
-      return `<div class="tx-item">
-        <div class="tx-dot" style="background:var(--surface2);">${cat?.emoji||'🔁'}</div>
-        <div class="tx-main">
-          <div class="t1">${cat?escapeHtml(cat.name):'Recurrente'}${r.note?' · '+escapeHtml(r.note):''}</div>
-          <div class="t2"><span class="badge ${recurringBadgeClass(info.status)}">${info.label}</span></div>
-        </div>
-        <div class="tx-amount ${r.type}">${r.type==='income'?'+':'-'}${fmtMoney(r.amount, currency())}</div>
-        <button class="btn btn-primary btn-sm" data-action="settle-recurring" data-id="${r.id}">Saldar</button>
-      </div>`;
-    }).join('')}
-  </div>` : ''}
-
   ${overBudget.length ? `
   <div class="card">
     <div class="section-title">⚠️ Alertas de presupuesto <span class="hint">${monthLabel(state.currentMonth)}</span></div>
@@ -678,15 +662,33 @@ function renderDashboard(){
       </div>`).join('')}
   </div>` : ''}
 
-  <div class="charts-row">
+  <div class="charts-row charts-row-even">
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      ${pendingRecurring.length ? `
+      <div class="card">
+        <div class="section-title">🔁 Recurrentes pendientes <span class="hint">${monthLabel(monthNow())}</span></div>
+        ${pendingRecurring.map(({r,info})=>{
+          const cat = categoryById(r.categoryId);
+          return `<div class="tx-item">
+            <div class="tx-dot" style="background:var(--surface2);">${cat?.emoji||'🔁'}</div>
+            <div class="tx-main">
+              <div class="t1">${cat?escapeHtml(cat.name):'Recurrente'}${r.note?' · '+escapeHtml(r.note):''}</div>
+              <div class="t2"><span class="badge ${recurringBadgeClass(info.status)}">${info.label}</span></div>
+            </div>
+            <div class="tx-amount ${r.type}">${r.type==='income'?'+':'-'}${fmtMoney(r.amount, currency())}</div>
+            <button class="btn btn-primary btn-sm" data-action="settle-recurring" data-id="${r.id}">Saldar</button>
+          </div>`;
+        }).join('')}
+      </div>` : ''}
+      <div class="card">
+        <div class="section-title">Últimos movimientos</div>
+        ${recent.length ? recent.map(txItemHtml).join('') : `<div class="empty">Sin movimientos este mes</div>`}
+      </div>
+    </div>
     <div class="card">
       <div class="section-title">Gastos por categoría <span class="hint">${monthLabel(state.currentMonth)}</span></div>
       <div class="chart-box"><canvas id="chart-dash-cat"></canvas></div>
       <div class="legend-list" id="legend-dash-cat"></div>
-    </div>
-    <div class="card">
-      <div class="section-title">Últimos movimientos</div>
-      ${recent.length ? recent.map(txItemHtml).join('') : `<div class="empty">Sin movimientos este mes</div>`}
     </div>
   </div>
   `;

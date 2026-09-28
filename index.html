@@ -46,7 +46,7 @@ a{color:var(--teal);}
 .tabs-wrap{position:relative;margin-bottom:20px;}
 .tabs{display:flex;gap:4px;overflow-x:auto;padding-bottom:4px;border-bottom:1px solid var(--border);-webkit-overflow-scrolling:touch;}
 .tabs-wrap::after{content:'';position:absolute;right:0;top:0;bottom:4px;width:32px;background:linear-gradient(to right, transparent, var(--bg));pointer-events:none;}
-.tab{padding:10px 14px;border-radius:var(--radius-sm) var(--radius-sm) 0 0;font-size:13px;font-weight:600;color:var(--text2);cursor:pointer;white-space:nowrap;border:none;background:transparent;position:relative;top:1px;}
+.tab{padding:10px 14px;border-radius:var(--radius-sm) var(--radius-sm) 0 0;font-size:13px;font-weight:600;color:var(--text2);cursor:pointer;white-space:nowrap;border:none;background:transparent;position:relative;top:1px;display:inline-flex;align-items:center;gap:7px;}
 .tab.active{color:var(--teal-dark);background:var(--surface);border:1px solid var(--border);border-bottom:1px solid var(--surface);}
 
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow);}
@@ -68,6 +68,10 @@ a{color:var(--teal);}
 @media (max-width:480px){
   .section-title{flex-direction:column;align-items:flex-start;}
   .section-title .btn{width:100%;justify-content:center;}
+  .tx-item{flex-wrap:wrap;}
+  .tx-item .tx-amount{order:2;margin-left:auto;}
+  .tx-item > .row-actions,.tx-item > .btn{order:3;flex-basis:100%;margin-top:8px;}
+  .tx-item > .btn{width:100%;justify-content:center;}
 }
 
 .btn{display:inline-flex;align-items:center;gap:6px;padding:10px 16px;border-radius:var(--radius-sm);font-size:13px;font-weight:700;cursor:pointer;transition:all .15s;border:1px solid transparent;}
@@ -79,7 +83,7 @@ a{color:var(--teal);}
 .btn-danger:hover{background:var(--red);color:#fff;}
 .btn-sm{padding:6px 10px;font-size:12px;}
 .btn:disabled{opacity:.5;cursor:not-allowed;}
-.icon-btn{background:transparent;border:none;cursor:pointer;color:var(--text3);padding:4px 6px;border-radius:6px;font-size:14px;}
+.icon-btn{background:transparent;border:none;cursor:pointer;color:var(--text3);padding:6px;border-radius:6px;font-size:14px;display:inline-flex;align-items:center;justify-content:center;}
 .icon-btn:hover{background:var(--surface2);color:var(--text);}
 
 .badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:100px;font-size:11px;font-weight:700;}
@@ -242,6 +246,36 @@ function uid(len=16){
 function escapeHtml(str){
   return String(str ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+
+/* ---------------- Icon system (replaces system-chrome emoji) ---------------- */
+const ICON_PATHS = {
+  dashboard: '<rect x="4" y="11" width="4" height="9" rx="1"/><rect x="10" y="6" width="4" height="14" rx="1"/><rect x="16" y="14" width="4" height="6" rx="1"/>',
+  transactions: '<path d="M4 8h13"/><path d="M13.5 4.5L17 8l-3.5 3.5"/><path d="M20 16H7"/><path d="M10.5 19.5L7 16l3.5-3.5"/>',
+  budgets: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1.1" fill="currentColor" stroke="none"/>',
+  recurring: '<path d="M17 2.5l4 4-4 4"/><path d="M3 11.5v-2a4 4 0 0 1 4-4h14"/><path d="M7 21.5l-4-4 4-4"/><path d="M21 12.5v2a4 4 0 0 1-4 4H3"/>',
+  goals: '<path d="M8 3.5h8V7a4 4 0 0 1-8 0V3.5Z"/><path d="M8 4.5H5.3A2.8 2.8 0 0 0 8 9"/><path d="M16 4.5h2.7A2.8 2.8 0 0 1 16 9"/><path d="M12 11v3.5"/><path d="M9 20.5h6"/><path d="M9.7 16.5h4.6l.9 4H8.8l.9-4Z"/>',
+  reports: '<path d="M3 17l6-6 4 4 8-8"/><path d="M15 6h6v6"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.8 7.8 0 0 0 .1-2l2-1.5-2-3.5-2.4 1a7.7 7.7 0 0 0-1.7-1L15 3.5h-4l-.4 2.5a7.7 7.7 0 0 0-1.7 1l-2.4-1-2 3.5 2 1.5a7.8 7.8 0 0 0 0 2l-2 1.5 2 3.5 2.4-1a7.7 7.7 0 0 0 1.7 1l.4 2.5h4l.4-2.5a7.7 7.7 0 0 0 1.7-1l2.4 1 2-3.5-2-1.5Z"/>',
+  edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+  trash: '<path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M9 7V4.5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1V7"/>',
+  pause: '<rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>',
+  play: '<path d="M6.5 4.2v15.6a1 1 0 0 0 1.5.9l12.5-7.8a1 1 0 0 0 0-1.8L8 3.3a1 1 0 0 0-1.5.9Z"/>',
+  undo: '<path d="M9 14l-5-5 5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-2"/>',
+  cash: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 10v.01M18 14v.01"/>',
+  check: '<circle cx="12" cy="12" r="9"/><path d="M8 12.3l2.5 2.5L16 9"/>',
+  link: '<path d="M9.5 14.5l5-5"/><path d="M13 5.3l1.3-1.3a4 4 0 0 1 5.7 5.7L18.7 11"/><path d="M11 18.7L9.7 20a4 4 0 0 1-5.7-5.7L5.3 13"/>',
+  printer: '<path d="M7 9V4.5h10V9"/><rect x="5" y="9" width="14" height="7" rx="1.5"/><path d="M7 16v3.5h10V16"/>',
+  download: '<path d="M12 4v11"/><path d="M7.5 11.5L12 16l4.5-4.5"/><path d="M5 20h14"/>',
+  upload: '<path d="M12 4.5v9"/><path d="M8 8l4-4 4 4"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>',
+  warning: '<path d="M12 3l10 18H2L12 3Z"/><path d="M12 9.8v4"/><path d="M12 17.3v.01"/>',
+  receipt: '<path d="M6 3h12v18l-2.5-1.5L13 21l-2.5-1.5L8 21l-2.5-1.5L6 3Z"/><path d="M9 8h6M9 12h6"/>',
+  search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.5-4.5"/>',
+};
+function icon(name, size){
+  const s = size || 18;
+  const body = ICON_PATHS[name] || '';
+  return `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;vertical-align:middle;">${body}</svg>`;
+}
 function todayStr(){ return new Date().toISOString().slice(0,10); }
 function monthNow(){ return new Date().toISOString().slice(0,7); }
 function monthKeyOf(dateStr){ return (dateStr||'').slice(0,7); }
@@ -334,7 +368,7 @@ function renderSetupScreen(){
   <div class="page-wrap">
   <div class="setup-screen">
     <div class="card">
-      <h1>⚙️ Falta configurar Firebase</h1>
+      <h1>${icon('settings',20)} Falta configurar Firebase</h1>
       <p style="color:var(--text2);font-size:13.5px;">Esta app necesita las credenciales de tu proyecto de Firebase para poder sincronizar los datos entre dispositivos sin login.</p>
       <ol>
         <li>Entrá a <b>console.firebase.google.com</b> y creá un proyecto (o usá uno existente).</li>
@@ -454,7 +488,7 @@ async function onJoinSpace(e){
 /* ---------------- Not found ---------------- */
 function renderNotFound(){
   return `<div class="page-wrap"><div class="landing">
-    <div class="brand-mark">🔍</div>
+    <div class="brand-mark">${icon('search',26)}</div>
     <h1>Espacio no encontrado</h1>
     <p>El link no corresponde a ningún espacio familiar activo. Revisá que esté completo, o creá uno nuevo.</p>
     <button class="btn btn-primary" data-action="back-home">Volver al inicio</button>
@@ -511,14 +545,14 @@ function getBudgetLimits(monthKey){
 function daysInMonth(y,m){ return new Date(y, m, 0).getDate(); }
 function recurringStatusInfo(r){
   const currentMonth = monthNow();
-  if((r.lastGenerated||'')===currentMonth) return {status:'paid', label:'✅ Pagado este mes'};
+  if((r.lastGenerated||'')===currentMonth) return {status:'paid', label:'Pagado este mes'};
   const [y,m] = currentMonth.split('-').map(Number);
   const day = Math.min(r.dueDay||1, daysInMonth(y,m));
   const due = new Date(y, m-1, day);
   const today = new Date(); today.setHours(0,0,0,0); due.setHours(0,0,0,0);
   const diffDays = Math.round((due-today)/86400000);
-  if(diffDays<0) return {status:'overdue', label:`🔴 Venció hace ${Math.abs(diffDays)} día${Math.abs(diffDays)===1?'':'s'} · ${monthLabel(currentMonth)}`};
-  if(diffDays<=7) return {status:'due-soon', label:`🟡 Vence ${diffDays===0?'hoy':'en '+diffDays+' día'+(diffDays===1?'':'s')} (${String(day).padStart(2,'0')}/${m})`};
+  if(diffDays<0) return {status:'overdue', label:`Venció hace ${Math.abs(diffDays)} día${Math.abs(diffDays)===1?'':'s'} · ${monthLabel(currentMonth)}`};
+  if(diffDays<=7) return {status:'due-soon', label:`Vence ${diffDays===0?'hoy':'en '+diffDays+' día'+(diffDays===1?'':'s')} (${String(day).padStart(2,'0')}/${m})`};
   return {status:'upcoming', label:`Vence el ${String(day).padStart(2,'0')}/${m}`};
 }
 function recurringBadgeClass(status){
@@ -593,8 +627,8 @@ function currency(){ return state.space?.currency || 'ARS'; }
 /* ---------------- Shell ---------------- */
 function renderShell(){
   const tabs = [
-    ['dashboard','📊 Panel'],['transactions','💸 Movimientos'],['budgets','🎯 Presupuestos'],
-    ['recurring','🔁 Recurrentes'],['goals','🏆 Metas y deudas'],['reports','📈 Reportes'],['settings','⚙️ Configuración'],
+    ['dashboard',icon('dashboard',16)+' Panel'],['transactions',icon('transactions',16)+' Movimientos'],['budgets',icon('budgets',16)+' Presupuestos'],
+    ['recurring',icon('recurring',16)+' Recurrentes'],['goals',icon('goals',16)+' Metas y deudas'],['reports',icon('reports',16)+' Reportes'],['settings',icon('settings',16)+' Configuración'],
   ];
   return `<div class="page-wrap">
     <div class="topbar">
@@ -605,9 +639,9 @@ function renderShell(){
       <div class="month-picker">
         <input type="month" id="month-input" value="${state.currentMonth}">
       </div>
-      <button class="btn btn-outline btn-sm" data-action="open-share">🔗 Compartir</button>
+      <button class="btn btn-outline btn-sm" data-action="open-share">${icon('link',15)} Compartir</button>
     </div>
-    ${state.justCreated ? `<div class="banner banner-teal">✅ Espacio creado. Tocá "Compartir" para enviarle el link a tu familia.</div>` : ''}
+    ${state.justCreated ? `<div class="banner banner-teal">${icon('check',16)} Espacio creado. Tocá "Compartir" para enviarle el link a tu familia.</div>` : ''}
     <div class="tabs-wrap">
       <div class="tabs">
         ${tabs.map(([id,label])=>`<button class="tab ${state.activeTab===id?'active':''}" data-tab="${id}">${label}</button>`).join('')}
@@ -659,7 +693,7 @@ function renderDashboard(){
 
   ${overBudget.length ? `
   <div class="card">
-    <div class="section-title">⚠️ Alertas de presupuesto <span class="hint">${monthLabel(state.currentMonth)}</span></div>
+    <div class="section-title"><span style="display:inline-flex;align-items:center;gap:8px;">${icon('warning',16)} Alertas de presupuesto</span> <span class="hint">${monthLabel(state.currentMonth)}</span></div>
     ${overBudget.map(o=>`
       <div style="margin-bottom:10px;">
         <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;">
@@ -674,11 +708,11 @@ function renderDashboard(){
     <div style="display:flex;flex-direction:column;gap:14px;">
       ${pendingRecurring.length ? `
       <div class="card">
-        <div class="section-title">🔁 Recurrentes pendientes <span class="hint">${monthLabel(monthNow())}</span></div>
+        <div class="section-title"><span style="display:inline-flex;align-items:center;gap:8px;">${icon('recurring',16)} Recurrentes pendientes</span> <span class="hint">${monthLabel(monthNow())}</span></div>
         ${pendingRecurring.map(({r,info})=>{
           const cat = categoryById(r.categoryId);
           return `<div class="tx-item">
-            <div class="tx-dot" style="background:var(--surface2);">${cat?.emoji||'🔁'}</div>
+            <div class="tx-dot" style="background:var(--surface2);color:var(--teal-dark);">${cat?cat.emoji:icon('recurring',18)}</div>
             <div class="tx-main">
               <div class="t1">${cat?escapeHtml(cat.name):'Recurrente'}${r.note?' · '+escapeHtml(r.note):''}</div>
               <div class="t2"><span class="badge ${recurringBadgeClass(info.status)}">${info.label}</span></div>
@@ -705,10 +739,10 @@ function txItemHtml(t){
   const cat = categoryById(t.categoryId);
   const acc = accountById(t.accountId);
   const mem = memberById(t.memberId);
-  const emoji = t.type==='transfer' ? '🔁' : (cat?.emoji || '•');
+  const glyph = t.type==='transfer' ? icon('transactions',18) : (cat?.emoji || '•');
   const sign = t.type==='income'?'+':(t.type==='expense'?'-':'');
   return `<div class="tx-item">
-    <div class="tx-dot" style="background:var(--surface2);">${emoji}</div>
+    <div class="tx-dot" style="background:var(--surface2);color:var(--slate);">${glyph}</div>
     <div class="tx-main">
       <div class="t1">${cat ? escapeHtml(cat.name) : (t.type==='transfer'?'Transferencia':'Movimiento')}</div>
       <div class="t2">${fmtDate(t.date)} · ${acc?escapeHtml(acc.name):''}${mem?' · '+escapeHtml(mem.name):''}${t.note?' · '+escapeHtml(t.note):''}</div>
@@ -739,7 +773,7 @@ function renderTransactions(){
       <select id="f-category"><option value="">Todas las categorías</option>${categories.map(c=>`<option value="${c.id}">${c.emoji} ${escapeHtml(c.name)}</option>`).join('')}</select>
       <select id="f-member"><option value="">Todos los integrantes</option>${members.map(m=>`<option value="${m.id}">${escapeHtml(m.name)}</option>`).join('')}</select>
     </div>
-    ${list.length ? list.map(t=>renderTxRow(t)).join('') : `<div class="empty"><div class="big">🧾</div>Sin movimientos con estos filtros</div>`}
+    ${list.length ? list.map(t=>renderTxRow(t)).join('') : `<div class="empty"><div class="big">${icon('receipt',32)}</div>Sin movimientos con estos filtros</div>`}
   </div>`;
 }
 function renderTxRow(t){
@@ -749,15 +783,15 @@ function renderTxRow(t){
   const mem = memberById(t.memberId);
   const sign = t.type==='income'?'+':(t.type==='expense'?'-':'');
   return `<div class="tx-item">
-    <div class="tx-dot" style="background:var(--surface2);">${t.type==='transfer'?'🔁':(cat?.emoji||'•')}</div>
+    <div class="tx-dot" style="background:var(--surface2);color:var(--slate);">${t.type==='transfer'?icon('transactions',18):(cat?.emoji||'•')}</div>
     <div class="tx-main">
       <div class="t1">${cat ? escapeHtml(cat.name) : 'Transferencia'} ${t.type==='transfer' && acc && toAcc ? `· ${escapeHtml(acc.name)} → ${escapeHtml(toAcc.name)}`:''}</div>
       <div class="t2">${fmtDate(t.date)}${acc && t.type!=='transfer'?' · '+escapeHtml(acc.name):''}${mem?' · '+escapeHtml(mem.name):''}${t.note?' · '+escapeHtml(t.note):''}</div>
     </div>
     <div class="tx-amount ${t.type}">${sign}${fmtMoney(t.amount, currency())}</div>
     <div class="row-actions">
-      <button class="icon-btn" data-action="edit-transaction" data-id="${t.id}">✏️</button>
-      <button class="icon-btn" data-action="delete-transaction" data-id="${t.id}">🗑️</button>
+      <button class="icon-btn" data-action="edit-transaction" data-id="${t.id}">${icon('edit',16)}</button>
+      <button class="icon-btn" data-action="delete-transaction" data-id="${t.id}">${icon('trash',16)}</button>
     </div>
   </div>`;
 }
@@ -802,7 +836,7 @@ function renderRecurring(){
   const totalIncome = activeList.filter(r=>r.type==='income').reduce((s,r)=>s+r.amount,0);
   return `
   <div class="card">
-    <div class="section-title">🔁 Movimientos recurrentes <button class="btn btn-primary btn-sm" data-action="new-recurring">+ Nuevo recurrente</button></div>
+    <div class="section-title"><span style="display:inline-flex;align-items:center;gap:8px;">${icon('recurring',16)} Movimientos recurrentes</span> <button class="btn btn-primary btn-sm" data-action="new-recurring">+ Nuevo recurrente</button></div>
     <p style="font-size:12.5px;color:var(--text3);margin-bottom:12px;">Pensado para sueldo, alquiler, suscripciones, etc. Cada mes tocá <b>Saldar</b> para confirmarlo — no se generan solos.</p>
     ${list.length ? list.map(renderRecurringRow).join('') : `<div class="empty">Sin movimientos recurrentes</div>`}
     ${list.length ? `
@@ -818,7 +852,7 @@ function renderRecurringRow(r){
   const sign = r.type==='income'?'+':'-';
   const info = recurringStatusInfo(r);
   return `<div class="tx-item">
-    <div class="tx-dot" style="background:var(--surface2);">${cat?.emoji||'🔁'}</div>
+    <div class="tx-dot" style="background:var(--surface2);color:var(--teal-dark);">${cat?cat.emoji:icon('recurring',18)}</div>
     <div class="tx-main">
       <div class="t1">${cat?escapeHtml(cat.name):'Recurrente'} ${r.active===false?'<span class="badge badge-slate">Pausado</span>':''}</div>
       <div class="t2">${acc?escapeHtml(acc.name):''}${r.note?' · '+escapeHtml(r.note):''}</div>
@@ -827,10 +861,10 @@ function renderRecurringRow(r){
     <div class="tx-amount ${r.type}">${sign}${fmtMoney(r.amount, currency())}</div>
     <div class="row-actions">
       ${(r.active!==false && info.status!=='paid') ? `<button class="btn btn-primary btn-sm" data-action="settle-recurring" data-id="${r.id}">Saldar</button>` : ''}
-      ${info.status==='paid' ? `<button class="icon-btn" data-action="unsettle-recurring" data-id="${r.id}" title="Marcar como no pagado">↩️</button>` : ''}
-      <button class="icon-btn" data-action="toggle-recurring" data-id="${r.id}">${r.active===false?'▶️':'⏸️'}</button>
-      <button class="icon-btn" data-action="edit-recurring" data-id="${r.id}">✏️</button>
-      <button class="icon-btn" data-action="delete-recurring" data-id="${r.id}">🗑️</button>
+      ${info.status==='paid' ? `<button class="icon-btn" data-action="unsettle-recurring" data-id="${r.id}" title="Marcar como no pagado">${icon('undo',16)}</button>` : ''}
+      <button class="icon-btn" data-action="toggle-recurring" data-id="${r.id}">${r.active===false?icon('play',16):icon('pause',16)}</button>
+      <button class="icon-btn" data-action="edit-recurring" data-id="${r.id}">${icon('edit',16)}</button>
+      <button class="icon-btn" data-action="delete-recurring" data-id="${r.id}">${icon('trash',16)}</button>
     </div>
   </div>`;
 }
@@ -840,15 +874,15 @@ function renderGoalsDebts(){
   return `
   <div class="grid grid-2">
     <div class="card">
-      <div class="section-title">🏆 Metas de ahorro <button class="btn btn-primary btn-sm" data-action="new-goal">+ Nueva meta</button></div>
+      <div class="section-title"><span style="display:inline-flex;align-items:center;gap:8px;">${icon('goals',16)} Metas de ahorro</span> <button class="btn btn-primary btn-sm" data-action="new-goal">+ Nueva meta</button></div>
       ${state.goals.length ? state.goals.map(g=>{
         const pct = g.targetAmount>0 ? (g.currentAmount||0)/g.targetAmount : 0;
         return `<div class="card" style="box-shadow:none;border-color:var(--border);margin-bottom:10px;">
           <div style="display:flex;justify-content:space-between;align-items:center;">
             <b>${escapeHtml(g.name)}</b>
             <div class="row-actions">
-              <button class="icon-btn" data-action="contribute-goal" data-id="${g.id}">💰</button>
-              <button class="icon-btn" data-action="delete-goal" data-id="${g.id}">🗑️</button>
+              <button class="icon-btn" data-action="contribute-goal" data-id="${g.id}">${icon('cash',16)}</button>
+              <button class="icon-btn" data-action="delete-goal" data-id="${g.id}">${icon('trash',16)}</button>
             </div>
           </div>
           <div style="font-size:12.5px;color:var(--text2);margin:6px 0;">${fmtMoney(g.currentAmount||0,currency())} de ${fmtMoney(g.targetAmount,currency())}${g.deadline?' · vence '+fmtDate(g.deadline):''}</div>
@@ -857,16 +891,16 @@ function renderGoalsDebts(){
       }).join('') : `<div class="empty">Sin metas todavía</div>`}
     </div>
     <div class="card">
-      <div class="section-title">💳 Deudas <button class="btn btn-primary btn-sm" data-action="new-debt">+ Nueva deuda</button></div>
+      <div class="section-title"><span style="display:inline-flex;align-items:center;gap:8px;">${icon('cash',16)} Deudas</span> <button class="btn btn-primary btn-sm" data-action="new-debt">+ Nueva deuda</button></div>
       ${state.debts.length ? state.debts.map(d=>{
         const pct = d.totalAmount>0 ? 1-((d.remainingAmount??d.totalAmount)/d.totalAmount) : 0;
         return `<div class="card" style="box-shadow:none;border-color:var(--border);margin-bottom:10px;">
           <div style="display:flex;justify-content:space-between;align-items:center;">
             <b>${escapeHtml(d.name)}</b>
             <div class="row-actions">
-              <button class="icon-btn" data-action="pay-debt" data-id="${d.id}" title="Registrar pago parcial">💵</button>
-              <button class="icon-btn" data-action="settle-debt" data-id="${d.id}" title="Saldar toda la deuda">✅</button>
-              <button class="icon-btn" data-action="delete-debt" data-id="${d.id}">🗑️</button>
+              <button class="icon-btn" data-action="pay-debt" data-id="${d.id}" title="Registrar pago parcial">${icon('cash',16)}</button>
+              <button class="icon-btn" data-action="settle-debt" data-id="${d.id}" title="Saldar toda la deuda">${icon('check',16)}</button>
+              <button class="icon-btn" data-action="delete-debt" data-id="${d.id}">${icon('trash',16)}</button>
             </div>
           </div>
           <div style="font-size:12.5px;color:var(--text2);margin:6px 0;">Restan ${fmtMoney(d.remainingAmount??d.totalAmount,currency())} de ${fmtMoney(d.totalAmount,currency())}${d.monthlyPayment?' · cuota '+fmtMoney(d.monthlyPayment,currency()):''}</div>
@@ -904,17 +938,17 @@ function renderSettings(){
   const shareUrl = location.origin + location.pathname + '?space=' + state.spaceId;
   return `
   <div class="card">
-    <div class="section-title">🔗 Compartir espacio</div>
+    <div class="section-title"><span style="display:inline-flex;align-items:center;gap:8px;">${icon('link',16)} Compartir espacio</span></div>
     <p style="font-size:13px;color:var(--text2);margin-bottom:8px;">Cualquiera con este link ve y edita las finanzas de tu familia.</p>
     <div class="share-box"><input readonly value="${shareUrl}" id="share-url-input"><button class="btn btn-primary btn-sm" data-action="copy-link">Copiar</button></div>
   </div>
 
   <div class="card">
-    <div class="section-title">📤 Exportar datos</div>
+    <div class="section-title"><span style="display:inline-flex;align-items:center;gap:8px;">${icon('upload',16)} Exportar datos</span></div>
     <p style="font-size:13px;color:var(--text2);margin-bottom:10px;">Descargá un respaldo de todos tus movimientos, o generá un PDF del reporte actual.</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
-      <button class="btn btn-outline btn-sm" data-action="export-csv">⬇️ Exportar CSV</button>
-      <button class="btn btn-outline btn-sm" data-action="export-pdf">🖨️ Exportar / Imprimir PDF</button>
+      <button class="btn btn-outline btn-sm" data-action="export-csv">${icon('download',15)} Exportar CSV</button>
+      <button class="btn btn-outline btn-sm" data-action="export-pdf">${icon('printer',15)} Exportar / Imprimir PDF</button>
     </div>
   </div>
 
@@ -948,7 +982,7 @@ function renderSettings(){
   </div>
 
   <div class="card" style="border-color:var(--red-light);">
-    <div class="section-title" style="color:var(--red-dark);">⚠️ Zona de riesgo</div>
+    <div class="section-title" style="color:var(--red-dark);"><span style="display:inline-flex;align-items:center;gap:8px;">${icon('warning',16)} Zona de riesgo</span></div>
     <p style="font-size:13px;color:var(--text2);margin-bottom:10px;">Elimina permanentemente este espacio y todos sus datos para todos los que tengan el link.</p>
     <button class="btn btn-danger" data-action="delete-space">Eliminar espacio familiar</button>
   </div>`;

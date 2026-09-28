@@ -634,12 +634,11 @@ function renderDashboard(){
 
   const recent = txForMonth(state.currentMonth).slice(0,6);
 
-  const statusOrder = {overdue:0,'due-soon':1,upcoming:2,paid:3};
   const pendingRecurring = (state.recurring||[])
     .filter(r=>r.active!==false)
     .map(r=>({r, info:recurringStatusInfo(r)}))
     .filter(x=>x.info.status!=='paid')
-    .sort((a,b)=>statusOrder[a.info.status]-statusOrder[b.info.status]);
+    .sort((a,b)=>(a.r.dueDay||1)-(b.r.dueDay||1));
 
   return `
   <div class="grid grid-4">

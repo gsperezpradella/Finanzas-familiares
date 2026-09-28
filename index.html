@@ -243,6 +243,9 @@ const DEFAULT_ACCOUNTS = [
 function uid(len=16){
   return crypto.randomUUID().replace(/-/g,'').slice(0,len);
 }
+const LAST_SPACE_KEY = 'finanzas_last_space';
+function rememberSpace(id){ try{ localStorage.setItem(LAST_SPACE_KEY, id); }catch(e){} }
+function forgetSpace(){ try{ localStorage.removeItem(LAST_SPACE_KEY); }catch(e){} }
 function escapeHtml(str){
   return String(str ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
@@ -463,6 +466,7 @@ async function onCreateSpace(e){
     state.spaceId = spaceId;
     await set(spaceRef(), spaceData);
     state.justCreated = true;
+    rememberSpace(spaceId);
     history.replaceState(null,'', location.pathname + '?space=' + spaceId);
     initSpaceSubscriptions();
   }catch(err){
@@ -480,6 +484,7 @@ async function onJoinSpace(e){
   code = code.trim();
   if(!code) return;
   state.spaceId = code;
+  rememberSpace(code);
   history.replaceState(null,'', location.pathname + '?space=' + code);
   render();
   initSpaceSubscriptions();
@@ -520,7 +525,7 @@ async function initSpaceSubscriptions(){
   state.authReady = true;
   clearSubs();
   unsubs.push(onValue(spaceRef(), snap=>{
-    if(!snap.exists()){ state.notFound=true; state.space=null; render(); return; }
+    if(!snap.exists()){ state.notFound=true; state.space=null; forgetSpace(); render(); return; }
     const val = snap.val();
     state.space = {
       id: state.spaceId,
@@ -1416,6 +1421,7 @@ async function deleteSpace(){
   if(!confirm('Última confirmación: esta acción no se puede deshacer.')) return;
   await remove(spaceRef());
   state.spaceId=null; state.space=null; clearSubs();
+  forgetSpace();
   history.replaceState(null,'', location.pathname);
   render();
 }
@@ -1492,9 +1498,18 @@ if('serviceWorker' in navigator){
 if(NEEDS_SETUP){
   render();
 } else if(state.spaceId){
+  rememberSpace(state.spaceId);
   initSpaceSubscriptions();
 } else {
-  render();
+  let remembered = null;
+  try{ remembered = localStorage.getItem(LAST_SPACE_KEY); }catch(e){}
+  if(remembered){
+    state.spaceId = remembered;
+    history.replaceState(null,'', location.pathname + '?space=' + remembered);
+    initSpaceSubscriptions();
+  } else {
+    render();
+  }
 }
 </script>
 </body>

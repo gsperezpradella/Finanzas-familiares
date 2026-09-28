@@ -495,31 +495,47 @@ async function initSpaceSubscriptions(){
     state.debts = objToArray(val.debts);
     state.recurring = objToArray(val.recurring);
     state.budgetsAll = val.budgets || {};
-    processRecurring();
     render();
   }, err=>console.error(err)));
 }
 function getBudgetLimits(monthKey){
   return (state.budgetsAll[monthKey]||{}).limits || {};
 }
-const recurringInFlight = new Set();
-function processRecurring(){
-  const currentRealMonth = monthNow();
-  (state.recurring||[]).forEach(r=>{
-    if(r.active===false) return;
-    if((r.lastGenerated||'')===currentRealMonth) return;
-    if((r.startMonth||currentRealMonth) > currentRealMonth) return;
-    if(recurringInFlight.has(r.id)) return;
-    recurringInFlight.add(r.id);
-    Promise.all([
+function daysInMonth(y,m){ return new Date(y, m, 0).getDate(); }
+function recurringStatusInfo(r){
+  const currentMonth = monthNow();
+  if((r.lastGenerated||'')===currentMonth) return {status:'paid', label:'✅ Pagado este mes'};
+  const [y,m] = currentMonth.split('-').map(Number);
+  const day = Math.min(r.dueDay||1, daysInMonth(y,m));
+  const due = new Date(y, m-1, day);
+  const today = new Date(); today.setHours(0,0,0,0); due.setHours(0,0,0,0);
+  const diffDays = Math.round((due-today)/86400000);
+  if(diffDays<0) return {status:'overdue', label:`🔴 Venció hace ${Math.abs(diffDays)} día${Math.abs(diffDays)===1?'':'s'} · ${monthLabel(currentMonth)}`};
+  if(diffDays<=7) return {status:'due-soon', label:`🟡 Vence ${diffDays===0?'hoy':'en '+diffDays+' día'+(diffDays===1?'':'s')} (${String(day).padStart(2,'0')}/${m})`};
+  return {status:'upcoming', label:`Vence el ${String(day).padStart(2,'0')}/${m}`};
+}
+function recurringBadgeClass(status){
+  return status==='overdue'?'badge-red':status==='due-soon'?'badge-amber':status==='paid'?'badge-green':'badge-slate';
+}
+const recurringSettling = new Set();
+async function settleRecurring(id){
+  if(recurringSettling.has(id)) return;
+  const r = state.recurring.find(x=>x.id===id);
+  if(!r) return;
+  const currentMonth = monthNow();
+  if((r.lastGenerated||'')===currentMonth) return;
+  recurringSettling.add(id);
+  try{
+    await Promise.all([
       set(spaceRef('transactions/'+uid(12)), {
         type:r.type, amount:r.amount, date: todayStr(), categoryId:r.categoryId,
         accountId:r.accountId, toAccountId:null, memberId:r.memberId||null,
-        note:(r.note?r.note+' (recurrente)':'Recurrente'), recurringId:r.id, createdAt: serverTimestamp(),
+        note:(r.note?r.note+' (recurrente)':'Recurrente')+' · '+monthLabel(currentMonth),
+        recurringId:r.id, createdAt: serverTimestamp(),
       }),
-      update(spaceRef('recurring/'+r.id), {lastGenerated: currentRealMonth}),
-    ]).catch(()=>{}).finally(()=>{ recurringInFlight.delete(r.id); });
-  });
+      update(spaceRef('recurring/'+r.id), {lastGenerated: currentMonth}),
+    ]);
+  } finally { recurringSettling.delete(id); }
 }
 
 /* ---------------- Derived data helpers ---------------- */
@@ -609,6 +625,13 @@ function renderDashboard(){
 
   const recent = txForMonth(state.currentMonth).slice(0,6);
 
+  const statusOrder = {overdue:0,'due-soon':1,upcoming:2,paid:3};
+  const pendingRecurring = (state.recurring||[])
+    .filter(r=>r.active!==false)
+    .map(r=>({r, info:recurringStatusInfo(r)}))
+    .filter(x=>x.info.status!=='paid')
+    .sort((a,b)=>statusOrder[a.info.status]-statusOrder[b.info.status]);
+
   return `
   <div class="grid grid-4">
     <div class="card"><div class="stat-label">Balance total</div><div class="stat-value">${fmtMoney(totalBalance(), currency())}</div></div>
@@ -616,6 +639,23 @@ function renderDashboard(){
     <div class="card"><div class="stat-label">Gastos del mes</div><div class="stat-value neg">${fmtMoney(mt.expense, currency())}</div></div>
     <div class="card"><div class="stat-label">Balance del mes</div><div class="stat-value ${mt.balance>=0?'pos':'neg'}">${fmtMoney(mt.balance, currency())}</div></div>
   </div>
+
+  ${pendingRecurring.length ? `
+  <div class="card">
+    <div class="section-title">🔁 Recurrentes pendientes <span class="hint">${monthLabel(monthNow())}</span></div>
+    ${pendingRecurring.map(({r,info})=>{
+      const cat = categoryById(r.categoryId);
+      return `<div class="tx-item">
+        <div class="tx-dot" style="background:var(--surface2);">${cat?.emoji||'🔁'}</div>
+        <div class="tx-main">
+          <div class="t1">${cat?escapeHtml(cat.name):'Recurrente'}${r.note?' · '+escapeHtml(r.note):''}</div>
+          <div class="t2"><span class="badge ${recurringBadgeClass(info.status)}">${info.label}</span></div>
+        </div>
+        <div class="tx-amount ${r.type}">${r.type==='income'?'+':'-'}${fmtMoney(r.amount, currency())}</div>
+        <button class="btn btn-primary btn-sm" data-action="settle-recurring" data-id="${r.id}">Saldar</button>
+      </div>`;
+    }).join('')}
+  </div>` : ''}
 
   ${overBudget.length ? `
   <div class="card">
@@ -742,7 +782,7 @@ function renderRecurring(){
   return `
   <div class="card">
     <div class="section-title">🔁 Movimientos recurrentes <button class="btn btn-primary btn-sm" data-action="new-recurring">+ Nuevo recurrente</button></div>
-    <p style="font-size:12.5px;color:var(--text3);margin-bottom:12px;">Se generan solos cada mes (en cuanto alguien de la familia abre la app ese mes). Pensado para sueldo, alquiler, suscripciones, etc.</p>
+    <p style="font-size:12.5px;color:var(--text3);margin-bottom:12px;">Pensado para sueldo, alquiler, suscripciones, etc. Cada mes tocá <b>Saldar</b> para confirmarlo — no se generan solos.</p>
     ${list.length ? list.map(renderRecurringRow).join('') : `<div class="empty">Sin movimientos recurrentes</div>`}
   </div>`;
 }
@@ -750,14 +790,17 @@ function renderRecurringRow(r){
   const cat = categoryById(r.categoryId);
   const acc = accountById(r.accountId);
   const sign = r.type==='income'?'+':'-';
+  const info = recurringStatusInfo(r);
   return `<div class="tx-item">
     <div class="tx-dot" style="background:var(--surface2);">${cat?.emoji||'🔁'}</div>
     <div class="tx-main">
       <div class="t1">${cat?escapeHtml(cat.name):'Recurrente'} ${r.active===false?'<span class="badge badge-slate">Pausado</span>':''}</div>
       <div class="t2">${acc?escapeHtml(acc.name):''}${r.note?' · '+escapeHtml(r.note):''}</div>
+      <div style="margin-top:5px;">${r.active===false?'':`<span class="badge ${recurringBadgeClass(info.status)}">${info.label}</span>`}</div>
     </div>
     <div class="tx-amount ${r.type}">${sign}${fmtMoney(r.amount, currency())}</div>
     <div class="row-actions">
+      ${(r.active!==false && info.status!=='paid') ? `<button class="btn btn-primary btn-sm" data-action="settle-recurring" data-id="${r.id}">Saldar</button>` : ''}
       <button class="icon-btn" data-action="toggle-recurring" data-id="${r.id}">${r.active===false?'▶️':'⏸️'}</button>
       <button class="icon-btn" data-action="edit-recurring" data-id="${r.id}">✏️</button>
       <button class="icon-btn" data-action="delete-recurring" data-id="${r.id}">🗑️</button>
@@ -979,7 +1022,10 @@ function modalRecurringForm(existing){
         <button type="button" data-type="expense" class="${type==='expense'?'active':''}">Gasto</button>
       </div>
       <input type="hidden" name="type" value="${type}">
-      <div class="field"><label>Monto mensual</label><input type="number" step="0.01" min="0" name="amount" value="${existing?.amount??''}" required></div>
+      <div class="field-row">
+        <div class="field"><label>Monto mensual</label><input type="number" step="0.01" min="0" name="amount" value="${existing?.amount??''}" required></div>
+        <div class="field"><label>Día de vencimiento</label><input type="number" min="1" max="31" name="dueDay" value="${existing?.dueDay??10}" required></div>
+      </div>
       <div class="field" data-field="category"><label>Categoría</label>
         <select name="categoryId">${categories.filter(c=>c.type===type).map(c=>`<option value="${c.id}" ${existing?.categoryId===c.id?'selected':''}>${c.emoji} ${escapeHtml(c.name)}</option>`).join('')}</select>
       </div>
@@ -1097,6 +1143,7 @@ function onShellClick(e){
     case 'new-recurring': openModal(modalRecurringForm(null)); break;
     case 'edit-recurring': openModal(modalRecurringForm(state.recurring.find(r=>r.id===id))); break;
     case 'toggle-recurring': { const r = state.recurring.find(x=>x.id===id); update(spaceRef('recurring/'+id), { active: r.active===false }); break; }
+    case 'settle-recurring': settleRecurring(id); break;
     case 'delete-recurring': if(confirm('¿Eliminar este recurrente?')) remove(spaceRef('recurring/'+id)); break;
     case 'export-csv': exportCSV(); break;
     case 'export-pdf': exportPdf(); break;
@@ -1232,6 +1279,7 @@ async function onModalSubmit(e){
         accountId: fd.get('accountId'),
         memberId: fd.get('memberId') || null,
         note: fd.get('note') || '',
+        dueDay: Math.min(31, Math.max(1, Number(fd.get('dueDay'))||10)),
       };
       if(id) await update(spaceRef('recurring/'+id), data);
       else await set(spaceRef('recurring/'+uid(10)), {...data, active:true, startMonth: monthNow(), lastGenerated:''});

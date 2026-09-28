@@ -835,6 +835,10 @@ function renderTxRow(t){
 function renderBudgets(){
   const cats = (state.space.categories||[]).filter(c=>c.type==='expense');
   const limits = getBudgetLimits(state.currentMonth);
+  const totalLimit = cats.reduce((s,c)=>s+(limits[c.id]||0),0);
+  const totalSpent = cats.reduce((s,c)=>s+categorySpend(state.currentMonth, c.id),0);
+  const totalPct = totalLimit>0 ? totalSpent/totalLimit : 0;
+  const totalColor = totalPct>=1?'var(--red)':(totalPct>=0.8?'var(--amber)':'var(--teal)');
   return `
   <div class="card">
     <div class="section-title">Presupuestos <span class="hint">${monthLabel(state.currentMonth)}</span>
@@ -857,6 +861,12 @@ function renderBudgets(){
           </tr>`;
         }).join('')}
         </tbody>
+        ${cats.length ? `<tfoot><tr style="font-weight:600;border-top:2px solid var(--border);">
+          <td>Total</td>
+          <td>${fmtMoney(totalLimit, currency())}</td>
+          <td>${fmtMoney(totalSpent, currency())}</td>
+          <td><div class="progress"><div style="width:${Math.min(totalPct*100,100)}%;background:${totalColor};"></div></div></td>
+        </tr></tfoot>` : ''}
       </table></div>
       <button class="btn btn-primary" type="submit" style="margin-top:14px;">Guardar presupuestos</button>
     </form>

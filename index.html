@@ -537,6 +537,15 @@ async function settleRecurring(id){
     ]);
   } finally { recurringSettling.delete(id); }
 }
+async function unsettleRecurring(id){
+  const r = state.recurring.find(x=>x.id===id);
+  if(!r) return;
+  const currentMonth = monthNow();
+  const linkedTx = state.transactions.find(t=>t.recurringId===r.id && monthKeyOf(t.date)===currentMonth);
+  const ops = [update(spaceRef('recurring/'+id), {lastGenerated: ''})];
+  if(linkedTx) ops.push(remove(spaceRef('transactions/'+linkedTx.id)));
+  await Promise.all(ops);
+}
 
 /* ---------------- Derived data helpers ---------------- */
 function categoryById(id){ return (state.space?.categories||[]).find(c=>c.id===id); }
@@ -801,6 +810,7 @@ function renderRecurringRow(r){
     <div class="tx-amount ${r.type}">${sign}${fmtMoney(r.amount, currency())}</div>
     <div class="row-actions">
       ${(r.active!==false && info.status!=='paid') ? `<button class="btn btn-primary btn-sm" data-action="settle-recurring" data-id="${r.id}">Saldar</button>` : ''}
+      ${info.status==='paid' ? `<button class="icon-btn" data-action="unsettle-recurring" data-id="${r.id}" title="Marcar como no pagado">↩️</button>` : ''}
       <button class="icon-btn" data-action="toggle-recurring" data-id="${r.id}">${r.active===false?'▶️':'⏸️'}</button>
       <button class="icon-btn" data-action="edit-recurring" data-id="${r.id}">✏️</button>
       <button class="icon-btn" data-action="delete-recurring" data-id="${r.id}">🗑️</button>
@@ -1144,6 +1154,7 @@ function onShellClick(e){
     case 'edit-recurring': openModal(modalRecurringForm(state.recurring.find(r=>r.id===id))); break;
     case 'toggle-recurring': { const r = state.recurring.find(x=>x.id===id); update(spaceRef('recurring/'+id), { active: r.active===false }); break; }
     case 'settle-recurring': settleRecurring(id); break;
+    case 'unsettle-recurring': if(confirm('¿Marcar como no pagado? Se va a borrar el movimiento que se generó.')) unsettleRecurring(id); break;
     case 'delete-recurring': if(confirm('¿Eliminar este recurrente?')) remove(spaceRef('recurring/'+id)); break;
     case 'export-csv': exportCSV(); break;
     case 'export-pdf': exportPdf(); break;

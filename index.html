@@ -367,6 +367,7 @@ const state = {
   debts:[],
   recurring:[],
   budgetsAll:{},
+  savingsLog:[],
   currentMonth: monthNow(),
   activeTab:'dashboard',
   justCreated:false,
@@ -571,11 +572,18 @@ async function initSpaceSubscriptions(){
     state.debts = objToArray(val.debts);
     state.recurring = objToArray(val.recurring);
     state.budgetsAll = val.budgets || {};
+    state.savingsLog = objToArray(val.savingsLog);
     render();
   }, err=>console.error(err)));
 }
 function getBudgetLimits(monthKey){
   return (state.budgetsAll[monthKey]||{}).limits || {};
+}
+function getSavingsTarget(monthKey){
+  return (state.budgetsAll[monthKey]||{}).savingsTarget || 0;
+}
+function savingsForMonth(monthKey){
+  return state.savingsLog.filter(s=>monthKeyOf(s.date)===monthKey).reduce((sum,s)=>sum+(s.amount||0),0);
 }
 function daysInMonth(y,m){ return new Date(y, m, 0).getDate(); }
 function recurringStatusInfo(r){
@@ -835,10 +843,14 @@ function renderTxRow(t){
 function renderBudgets(){
   const cats = (state.space.categories||[]).filter(c=>c.type==='expense');
   const limits = getBudgetLimits(state.currentMonth);
-  const totalLimit = cats.reduce((s,c)=>s+(limits[c.id]||0),0);
-  const totalSpent = cats.reduce((s,c)=>s+categorySpend(state.currentMonth, c.id),0);
+  const savingsTarget = getSavingsTarget(state.currentMonth);
+  const savingsSpent = savingsForMonth(state.currentMonth);
+  const totalLimit = cats.reduce((s,c)=>s+(limits[c.id]||0),0) + savingsTarget;
+  const totalSpent = cats.reduce((s,c)=>s+categorySpend(state.currentMonth, c.id),0) + savingsSpent;
   const totalPct = totalLimit>0 ? totalSpent/totalLimit : 0;
   const totalColor = totalPct>=1?'var(--red)':(totalPct>=0.8?'var(--amber)':'var(--teal)');
+  const savingsPct = savingsTarget>0 ? savingsSpent/savingsTarget : 0;
+  const savingsColor = savingsPct>=1?'var(--green)':(savingsPct>=0.5?'var(--teal)':'var(--amber)');
   return `
   <div class="card">
     <div class="section-title">Presupuestos <span class="hint">${monthLabel(state.currentMonth)}</span>
@@ -860,14 +872,21 @@ function renderBudgets(){
             <td><div class="progress"><div style="width:${Math.min(pct*100,100)}%;background:${color};"></div></div></td>
           </tr>`;
         }).join('')}
+        <tr>
+          <td>🐷 Ahorro</td>
+          <td style="max-width:160px;"><input type="number" min="0" step="1" name="savingsTarget" value="${savingsTarget||''}" placeholder="0"></td>
+          <td>${fmtMoney(savingsSpent, currency())}</td>
+          <td><div class="progress"><div style="width:${Math.min(savingsPct*100,100)}%;background:${savingsColor};"></div></div></td>
+        </tr>
         </tbody>
-        ${cats.length ? `<tfoot><tr style="font-weight:600;border-top:2px solid var(--border);">
+        <tfoot><tr style="font-weight:600;border-top:2px solid var(--border);">
           <td>Total</td>
           <td>${fmtMoney(totalLimit, currency())}</td>
           <td>${fmtMoney(totalSpent, currency())}</td>
           <td><div class="progress"><div style="width:${Math.min(totalPct*100,100)}%;background:${totalColor};"></div></div></td>
-        </tr></tfoot>` : ''}
+        </tr></tfoot>
       </table></div>
+      <p style="font-size:12px;color:var(--text3);margin-top:8px;">La fila "Ahorro" cuenta lo que aportaste a tus metas de ahorro este mes (pestaña Metas y deudas).</p>
       <button class="btn btn-primary" type="submit" style="margin-top:14px;">Guardar presupuestos</button>
     </form>
   </div>`;
@@ -1302,7 +1321,8 @@ async function onShellSubmit(e){
     for(const [k,v] of fd.entries()){
       if(k.startsWith('limit_') && v) limits[k.replace('limit_','')] = Number(v);
     }
-    await update(spaceRef('budgets/'+state.currentMonth), {limits});
+    const savingsTarget = Number(fd.get('savingsTarget')||0);
+    await update(spaceRef('budgets/'+state.currentMonth), {limits, savingsTarget});
   }
   if(e.target.dataset.form==='space-settings'){
     e.preventDefault();
@@ -1357,7 +1377,11 @@ async function onModalSubmit(e){
     if(formType==='goal-contribute'){
       const id = form.dataset.id;
       const g = state.goals.find(x=>x.id===id);
-      await update(spaceRef('goals/'+id), { currentAmount: (g.currentAmount||0) + Number(fd.get('amount')) });
+      const amount = Number(fd.get('amount'));
+      await Promise.all([
+        update(spaceRef('goals/'+id), { currentAmount: (g.currentAmount||0) + amount }),
+        set(spaceRef('savingsLog/'+uid(12)), { goalId:id, amount, date: todayStr(), createdAt: serverTimestamp() }),
+      ]);
     }
     if(formType==='debt'){
       const id = form.dataset.id;
@@ -1451,7 +1475,7 @@ function exportPdf(){
 async function copyPrevBudget(){
   const prev = addMonths(state.currentMonth,-1);
   const snap = await get(spaceRef('budgets/'+prev));
-  if(snap.exists()) await update(spaceRef('budgets/'+state.currentMonth), { limits: snap.val().limits || {} });
+  if(snap.exists()) await update(spaceRef('budgets/'+state.currentMonth), { limits: snap.val().limits || {}, savingsTarget: snap.val().savingsTarget || 0 });
 }
 async function removeSpaceChild(field, id){
   await remove(spaceRef(field+'/'+id));

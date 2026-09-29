@@ -309,7 +309,6 @@ const ICON_PATHS = {
   receipt: '<path d="M6 3h12v18l-2.5-1.5L13 21l-2.5-1.5L8 21l-2.5-1.5L6 3Z"/><path d="M9 8h6M9 12h6"/>',
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.5-4.5"/>',
   store: '<path d="M3.5 9.5l1-5.5h15l1 5.5"/><path d="M4.3 9.5V19a1 1 0 0 0 1 1h13.4a1 1 0 0 0 1-1V9.5"/><path d="M4 9.5a2.4 2.4 0 0 0 4.8 0 2.4 2.4 0 0 0 4.8 0 2.4 2.4 0 0 0 4.8 0"/><path d="M9.8 20v-5.5h4.4V20"/>',
-  camera: '<path d="M4 8.3A1.3 1.3 0 0 1 5.3 7h2l1-2h7.4l1 2h2A1.3 1.3 0 0 1 20 8.3V18a1.3 1.3 0 0 1-1.3 1.3H5.3A1.3 1.3 0 0 1 4 18Z"/><circle cx="12" cy="13" r="3.4"/>',
 };
 function icon(name, size){
   const s = size || 18;
@@ -678,88 +677,12 @@ function defaultGroceryCategoryId(){
   return (alim || cats[0])?.id || '';
 }
 
-/* ---------------- Ticket OCR ---------------- */
-let tesseractLoadPromise = null;
-function loadTesseract(){
-  if(window.Tesseract) return Promise.resolve();
-  if(tesseractLoadPromise) return tesseractLoadPromise;
-  tesseractLoadPromise = new Promise((resolve,reject)=>{
-    const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.0.4/dist/tesseract.min.js';
-    s.onload = resolve;
-    s.onerror = ()=>reject(new Error('No se pudo cargar el lector de texto.'));
-    document.head.appendChild(s);
-  });
-  return tesseractLoadPromise;
-}
-async function runTicketOCR(file, statusEl){
-  await loadTesseract();
-  if(statusEl) statusEl.textContent = 'Leyendo ticket... 0%';
-  const { data } = await Tesseract.recognize(file, 'spa', {
-    logger: m=>{
-      if(statusEl && m.status==='recognizing text') statusEl.textContent = `Leyendo ticket... ${Math.round((m.progress||0)*100)}%`;
-    }
-  });
-  return data.text || '';
-}
-function parsePriceStr(s){
-  let clean = String(s).replace(/\s/g,'');
-  if(/,\d{2}$/.test(clean)) clean = clean.replace(/\./g,'').replace(',','.');
-  else clean = clean.replace(/,/g,'');
-  return parseFloat(clean) || 0;
-}
-function parseReceiptLineItems(text){
-  const IGNORE_RE = /^(sub)?\s*total|iva\b|efectivo|tarjeta|vuelto|cambio|cuit|fecha|hora\b|ticket|caja\b|gracias|cliente|resumen|descuento|puntos/i;
-  const priceRe = /(\d{1,3}(?:[.\s]\d{3})*(?:[.,]\d{2})?|\d+)\s*$/;
-  const lines = String(text).split('\n').map(l=>l.trim()).filter(Boolean);
-  const items = [];
-  let detectedTotal = null;
-  for(const line of lines){
-    const m = line.match(priceRe);
-    if(!m) continue;
-    const price = parsePriceStr(m[1]);
-    if(!(price>0)) continue;
-    const namePart = line.slice(0, m.index).trim().replace(/[-–.:x]+$/i,'').trim();
-    if(!namePart || namePart.length<2) continue;
-    if(IGNORE_RE.test(namePart)){
-      if(/total/i.test(namePart) && !/sub/i.test(namePart) && detectedTotal===null) detectedTotal = price;
-      continue;
-    }
-    items.push({name: namePart, price});
-  }
-  return {items, detectedTotal};
-}
 function recomputePurchaseTotal(){
   const rows = document.querySelectorAll('#purchase-items-list .purchase-item-row');
   let sum = 0;
   rows.forEach(r=>{ const v = parseFloat(r.querySelector('.pi-price').value); if(!isNaN(v)) sum += v; });
   const totalInput = document.getElementById('purchase-total-input');
   if(totalInput) totalInput.value = sum ? Math.round(sum*100)/100 : '';
-}
-async function onTicketPhotoSelected(e){
-  const file = e.target.files && e.target.files[0];
-  if(!file) return;
-  const previewEl = document.getElementById('ticket-photo-preview');
-  const statusEl = document.getElementById('ticket-ocr-status');
-  if(previewEl) previewEl.innerHTML = `<img src="${URL.createObjectURL(file)}" style="max-width:150px;max-height:150px;border-radius:8px;border:1px solid var(--border);">`;
-  try{
-    if(statusEl) statusEl.textContent = 'Cargando lector de texto...';
-    const text = await runTicketOCR(file, statusEl);
-    const {items, detectedTotal} = parseReceiptLineItems(text);
-    if(items.length){
-      const list = document.getElementById('purchase-items-list');
-      if(list) list.innerHTML = items.map(it=>purchaseItemRow(it)).join('');
-    }
-    recomputePurchaseTotal();
-    if(detectedTotal){
-      const totalInput = document.getElementById('purchase-total-input');
-      if(totalInput) totalInput.value = Math.round(detectedTotal*100)/100;
-    }
-    if(statusEl) statusEl.textContent = items.length ? 'Ticket leído. Revisá y corregí la lista antes de guardar.' : 'No se reconocieron productos automáticamente. Cargalos a mano.';
-  }catch(err){
-    console.error(err);
-    if(statusEl) statusEl.textContent = 'No se pudo leer el ticket automáticamente. Cargá los productos a mano.';
-  }
 }
 async function deletePurchase(id){
   const p = state.purchases.find(x=>x.id===id);
@@ -997,10 +920,10 @@ function renderMarkets(){
       <span style="display:inline-flex;align-items:center;gap:8px;">${icon('store',16)} Mercados</span>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-outline btn-sm" data-action="new-market">+ Nuevo mercado</button>
-        <button class="btn btn-primary btn-sm" data-action="new-purchase">${icon('camera',15)} Nueva compra</button>
+        <button class="btn btn-primary btn-sm" data-action="new-purchase">${icon('receipt',15)} Nueva compra</button>
       </div>
     </div>
-    <p style="font-size:12.5px;color:var(--text2);margin-bottom:12px;">Sacale una foto al ticket para cargar la lista de productos automáticamente, o cargalos a mano. Cada mercado guarda el historial de lo comprado ahí.</p>
+    <p style="font-size:12.5px;color:var(--text2);margin-bottom:12px;">Registrá tus compras por mercado: cargá los productos y el total de cada una. Cada mercado guarda el historial de lo comprado ahí.</p>
     ${markets.length ? `<div class="grid grid-3">
       ${markets.map(m=>{
         const total = marketTotalSpent(m.id);
@@ -1027,7 +950,7 @@ function renderMarketDetail(m){
         <button class="icon-btn" data-action="back-to-markets" title="Volver a mercados">${icon('undo',16)}</button>
         ${icon('store',16)} ${escapeHtml(m.name)}
       </span>
-      <button class="btn btn-primary btn-sm" data-action="new-purchase" data-market-id="${m.id}">${icon('camera',15)} Nueva compra</button>
+      <button class="btn btn-primary btn-sm" data-action="new-purchase" data-market-id="${m.id}">${icon('receipt',15)} Nueva compra</button>
     </div>
     <div style="margin-bottom:14px;"><div class="stat-label">Total gastado acá</div><div class="stat-value neg">${fmtMoney(total, currency())}</div></div>
     ${purchases.length ? purchases.map(p=>`
@@ -1386,15 +1309,6 @@ function modalNewPurchase(prefillMarketId){
       <div class="field" data-field="new-market" style="${markets.length?'display:none;':''}"><label>Nombre del nuevo mercado</label><input name="newMarketName" placeholder="Carrefour, Día, Coto..." ${!markets.length?'required':''}></div>
 
       <div class="field">
-        <label>Foto del ticket (opcional)</label>
-        <p style="font-size:12px;color:var(--text3);margin-bottom:8px;">Sacale una foto y va a intentar completar la lista de productos. Siempre podés revisarla y corregirla antes de guardar.</p>
-        <input type="file" accept="image/*" capture="environment" id="ticket-photo-input" style="display:none;">
-        <button type="button" class="btn btn-outline btn-sm" data-action="pick-ticket-photo">${icon('camera',15)} Sacar foto del ticket</button>
-        <div id="ticket-photo-preview" style="margin-top:8px;"></div>
-        <div id="ticket-ocr-status" style="font-size:12px;color:var(--text3);margin-top:6px;"></div>
-      </div>
-
-      <div class="field">
         <label>Productos</label>
         <div id="purchase-items-list">${purchaseItemRow()}</div>
         <button type="button" class="btn btn-outline btn-sm" data-action="add-purchase-item" style="margin-top:4px;">+ Agregar producto</button>
@@ -1453,7 +1367,6 @@ function onModalChange(e){
     if(input) input.required = isNew;
     return;
   }
-  if(e.target.id==='ticket-photo-input'){ onTicketPhotoSelected(e); return; }
   if(e.target.classList.contains('pi-price')){ recomputePurchaseTotal(); return; }
 }
 function updateLenderFieldVisibility(form){
@@ -1528,7 +1441,6 @@ function onModalClick(e){
   if(e.target.id==='modal-inner') return;
   if(e.target.closest('[data-action="close-modal-backdrop"]') && e.target.classList.contains('modal-backdrop')){ closeModal(); return; }
   if(e.target.closest('[data-action="copy-link-modal"]')){ copyToClipboard(document.getElementById('share-url-input-modal').value); return; }
-  if(e.target.closest('[data-action="pick-ticket-photo"]')){ document.getElementById('ticket-photo-input')?.click(); return; }
   if(e.target.closest('[data-action="add-purchase-item"]')){
     const list = document.getElementById('purchase-items-list');
     if(list) list.insertAdjacentHTML('beforeend', purchaseItemRow());

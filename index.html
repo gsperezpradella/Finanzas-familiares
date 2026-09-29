@@ -111,11 +111,6 @@ tr:last-child td{border-bottom:none;}
 .field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
 @media (max-width:520px){.field-row{grid-template-columns:1fr;}}
 
-.purchase-item-row{display:flex;gap:8px;margin-bottom:6px;align-items:center;}
-.purchase-item-row .pi-name{flex:1;min-width:0;padding:8px 10px;border:1px solid var(--border2);border-radius:var(--radius-sm);font-size:13px;background:var(--surface);color:var(--text);}
-.purchase-item-row .pi-price{width:100px;flex-shrink:0;padding:8px 10px;border:1px solid var(--border2);border-radius:var(--radius-sm);font-size:13px;background:var(--surface);color:var(--text);}
-@media (max-width:480px){.purchase-item-row .pi-price{width:78px;}}
-
 .type-toggle{display:flex;gap:6px;margin-bottom:14px;}
 .type-toggle button{flex:1;padding:9px;border-radius:var(--radius-sm);border:1px solid var(--border2);background:var(--surface);font-weight:700;font-size:13px;cursor:pointer;color:var(--text2);}
 .type-toggle button.active[data-type="income"]{background:var(--green-light);border-color:var(--green);color:var(--green);}
@@ -308,7 +303,6 @@ const ICON_PATHS = {
   warning: '<path d="M12 3l10 18H2L12 3Z"/><path d="M12 9.8v4"/><path d="M12 17.3v.01"/>',
   receipt: '<path d="M6 3h12v18l-2.5-1.5L13 21l-2.5-1.5L8 21l-2.5-1.5L6 3Z"/><path d="M9 8h6M9 12h6"/>',
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.5-4.5"/>',
-  store: '<path d="M3.5 9.5l1-5.5h15l1 5.5"/><path d="M4.3 9.5V19a1 1 0 0 0 1 1h13.4a1 1 0 0 0 1-1V9.5"/><path d="M4 9.5a2.4 2.4 0 0 0 4.8 0 2.4 2.4 0 0 0 4.8 0 2.4 2.4 0 0 0 4.8 0"/><path d="M9.8 20v-5.5h4.4V20"/>',
 };
 function icon(name, size){
   const s = size || 18;
@@ -373,9 +367,6 @@ const state = {
   debts:[],
   recurring:[],
   budgetsAll:{},
-  markets:[],
-  purchases:[],
-  selectedMarketId:null,
   currentMonth: monthNow(),
   activeTab:'dashboard',
   justCreated:false,
@@ -580,8 +571,6 @@ async function initSpaceSubscriptions(){
     state.debts = objToArray(val.debts);
     state.recurring = objToArray(val.recurring);
     state.budgetsAll = val.budgets || {};
-    state.markets = objToArray(val.markets);
-    state.purchases = objToArray(val.purchases);
     render();
   }, err=>console.error(err)));
 }
@@ -669,34 +658,11 @@ function categorySpend(monthKey, categoryId){
   return txForMonth(monthKey).filter(t=>t.type==='expense' && t.categoryId===categoryId).reduce((s,t)=>s+t.amount,0);
 }
 function currency(){ return state.space?.currency || 'ARS'; }
-function purchasesForMarket(marketId){ return state.purchases.filter(p=>p.marketId===marketId); }
-function marketTotalSpent(marketId){ return purchasesForMarket(marketId).reduce((s,p)=>s+(p.total||0),0); }
-function defaultGroceryCategoryId(){
-  const cats = (state.space.categories||[]).filter(c=>c.type==='expense');
-  const alim = cats.find(c=>/alimentaci/i.test(c.name));
-  return (alim || cats[0])?.id || '';
-}
-
-function recomputePurchaseTotal(){
-  const rows = document.querySelectorAll('#purchase-items-list .purchase-item-row');
-  let sum = 0;
-  rows.forEach(r=>{ const v = parseFloat(r.querySelector('.pi-price').value); if(!isNaN(v)) sum += v; });
-  const totalInput = document.getElementById('purchase-total-input');
-  if(totalInput) totalInput.value = sum ? Math.round(sum*100)/100 : '';
-}
-async function deletePurchase(id){
-  const p = state.purchases.find(x=>x.id===id);
-  if(!p) return;
-  const ops = [remove(spaceRef('purchases/'+id))];
-  if(p.txId) ops.push(remove(spaceRef('transactions/'+p.txId)));
-  await Promise.all(ops);
-}
 
 /* ---------------- Shell ---------------- */
 function renderShell(){
   const tabs = [
     ['dashboard',icon('dashboard',16)+' Panel'],['transactions',icon('transactions',16)+' Movimientos'],['budgets',icon('budgets',16)+' Presupuestos'],
-    ['markets',icon('store',16)+' Mercados'],
     ['recurring',icon('recurring',16)+' Recurrentes'],['goals',icon('goals',16)+' Metas y deudas'],['reports',icon('reports',16)+' Reportes'],['settings',icon('settings',16)+' Configuración'],
   ];
   return `<div class="page-wrap">
@@ -724,7 +690,6 @@ function renderTab(){
     case 'dashboard': return renderDashboard();
     case 'transactions': return renderTransactions();
     case 'budgets': return renderBudgets();
-    case 'markets': return renderMarkets();
     case 'recurring': return renderRecurring();
     case 'goals': return renderGoalsDebts();
     case 'reports': return renderReports();
@@ -905,77 +870,6 @@ function renderBudgets(){
       </table></div>
       <button class="btn btn-primary" type="submit" style="margin-top:14px;">Guardar presupuestos</button>
     </form>
-  </div>`;
-}
-
-/* ---------------- Markets (compras / tickets) ---------------- */
-function renderMarkets(){
-  const selected = state.selectedMarketId ? state.markets.find(m=>m.id===state.selectedMarketId) : null;
-  if(state.selectedMarketId && !selected) state.selectedMarketId = null;
-  if(selected) return renderMarketDetail(selected);
-  const markets = state.markets;
-  return `
-  <div class="card">
-    <div class="section-title">
-      <span style="display:inline-flex;align-items:center;gap:8px;">${icon('store',16)} Mercados</span>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="btn btn-outline btn-sm" data-action="new-market">+ Nuevo mercado</button>
-        <button class="btn btn-primary btn-sm" data-action="new-purchase">${icon('receipt',15)} Nueva compra</button>
-      </div>
-    </div>
-    <p style="font-size:12.5px;color:var(--text2);margin-bottom:12px;">Registrá tus compras por mercado: cargá los productos y el total de cada una. Cada mercado guarda el historial de lo comprado ahí.</p>
-    ${markets.length ? `<div class="grid grid-3">
-      ${markets.map(m=>{
-        const total = marketTotalSpent(m.id);
-        const count = purchasesForMarket(m.id).length;
-        return `<div class="card" style="box-shadow:none;border-color:var(--border);cursor:pointer;" data-action="view-market" data-id="${m.id}">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
-            <b>${escapeHtml(m.name)}</b>
-            <button class="icon-btn" data-action="delete-market" data-id="${m.id}" title="Eliminar mercado">${icon('trash',15)}</button>
-          </div>
-          <div style="font-size:12.5px;color:var(--text2);margin:8px 0 2px;">${count} compra${count===1?'':'s'} registrada${count===1?'':'s'}</div>
-          <div class="stat-value neg" style="font-size:18px;">${fmtMoney(total, currency())}</div>
-        </div>`;
-      }).join('')}
-    </div>` : `<div class="empty">Sin mercados todavía. Creá uno y sacale una foto a tu próximo ticket.</div>`}
-  </div>`;
-}
-function renderMarketDetail(m){
-  const purchases = purchasesForMarket(m.id).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-  const total = marketTotalSpent(m.id);
-  return `
-  <div class="card">
-    <div class="section-title">
-      <span style="display:inline-flex;align-items:center;gap:8px;">
-        <button class="icon-btn" data-action="back-to-markets" title="Volver a mercados">${icon('undo',16)}</button>
-        ${icon('store',16)} ${escapeHtml(m.name)}
-      </span>
-      <button class="btn btn-primary btn-sm" data-action="new-purchase" data-market-id="${m.id}">${icon('receipt',15)} Nueva compra</button>
-    </div>
-    <div style="margin-bottom:14px;"><div class="stat-label">Total gastado acá</div><div class="stat-value neg">${fmtMoney(total, currency())}</div></div>
-    ${purchases.length ? purchases.map(p=>`
-      <div class="card" style="box-shadow:none;border-color:var(--border);margin-bottom:10px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
-          <b>${fmtDate(p.date)}</b>
-          <div style="display:flex;align-items:center;gap:10px;">
-            <span class="tx-amount expense">${fmtMoney(p.total, currency())}</span>
-            <button class="icon-btn" data-action="delete-purchase" data-id="${p.id}">${icon('trash',15)}</button>
-          </div>
-        </div>
-        ${(p.items||[]).length ? `<ul style="margin:8px 0 0;padding-left:18px;font-size:12.5px;color:var(--text2);">
-          ${p.items.map(it=>`<li style="margin-bottom:2px;">${escapeHtml(it.name)} — ${fmtMoney(it.price, currency())}</li>`).join('')}
-        </ul>` : ''}
-      </div>
-    `).join('') : `<div class="empty">Sin compras registradas en este mercado todavía</div>`}
-  </div>`;
-}
-let purchaseItemSeq = 0;
-function purchaseItemRow(item){
-  const rid = 'pi'+(purchaseItemSeq++);
-  return `<div class="purchase-item-row" data-row-id="${rid}">
-    <input type="text" class="pi-name" value="${escapeHtml(item?.name||'')}" placeholder="Producto">
-    <input type="number" class="pi-price" min="0" step="0.01" value="${item?.price??''}" placeholder="Precio">
-    <button type="button" class="icon-btn" data-action="remove-purchase-item">${icon('trash',15)}</button>
   </div>`;
 }
 
@@ -1283,53 +1177,6 @@ function modalCategoryForm(){
     <div class="modal-foot" style="padding:14px 0 0;"><button type="button" class="btn btn-outline" data-action="close-modal">Cancelar</button><button type="submit" class="btn btn-primary">Agregar</button></div>
   </form></div>`;
 }
-function modalMarketForm(){
-  return `<div class="modal-head"><h3>Nuevo mercado</h3><button class="icon-btn" data-action="close-modal">✕</button></div>
-  <div class="modal-body"><form data-form="market">
-    <div class="field"><label>Nombre</label><input name="name" placeholder="Carrefour, Día, Coto..." required></div>
-    <div class="modal-foot" style="padding:14px 0 0;"><button type="button" class="btn btn-outline" data-action="close-modal">Cancelar</button><button type="submit" class="btn btn-primary">Agregar</button></div>
-  </form></div>`;
-}
-function modalNewPurchase(prefillMarketId){
-  const markets = state.markets;
-  const accounts = state.space.accounts||[];
-  const categories = (state.space.categories||[]).filter(c=>c.type==='expense');
-  const defaultCatId = defaultGroceryCategoryId();
-  purchaseItemSeq = 0;
-  return `
-  <div class="modal-head"><h3>Nueva compra</h3><button class="icon-btn" data-action="close-modal">✕</button></div>
-  <div class="modal-body">
-    <form data-form="purchase">
-      <div class="field"><label>Mercado</label>
-        <select name="marketId" id="purchase-market-select">
-          ${markets.map(m=>`<option value="${m.id}" ${prefillMarketId===m.id?'selected':''}>${escapeHtml(m.name)}</option>`).join('')}
-          <option value="__new__" ${!markets.length?'selected':''}>+ Nuevo mercado...</option>
-        </select>
-      </div>
-      <div class="field" data-field="new-market" style="${markets.length?'display:none;':''}"><label>Nombre del nuevo mercado</label><input name="newMarketName" placeholder="Carrefour, Día, Coto..." ${!markets.length?'required':''}></div>
-
-      <div class="field">
-        <label>Productos</label>
-        <div id="purchase-items-list">${purchaseItemRow()}</div>
-        <button type="button" class="btn btn-outline btn-sm" data-action="add-purchase-item" style="margin-top:4px;">+ Agregar producto</button>
-      </div>
-
-      <div class="field-row">
-        <div class="field"><label>Total</label><input type="number" min="0" step="0.01" name="total" id="purchase-total-input" placeholder="0"></div>
-        <div class="field"><label>Fecha</label><input type="date" name="date" value="${todayStr()}" required></div>
-      </div>
-      <div class="field-row">
-        <div class="field"><label>Cuenta</label><select name="accountId">${accounts.map(a=>`<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('')}</select></div>
-        <div class="field"><label>Categoría</label><select name="categoryId">${categories.map(c=>`<option value="${c.id}" ${c.id===defaultCatId?'selected':''}>${c.emoji} ${escapeHtml(c.name)}</option>`).join('')}</select></div>
-      </div>
-
-      <div class="modal-foot" style="padding:14px 0 0;">
-        <button type="button" class="btn btn-outline" data-action="close-modal">Cancelar</button>
-        <button type="submit" class="btn btn-primary">Guardar compra</button>
-      </div>
-    </form>
-  </div>`;
-}
 function modalShare(){
   const shareUrl = location.origin + location.pathname + '?space=' + state.spaceId;
   return `<div class="modal-head"><h3>Compartir espacio familiar</h3><button class="icon-btn" data-action="close-modal">✕</button></div>
@@ -1359,15 +1206,6 @@ function onModalChange(e){
     const form = e.target.closest('form');
     if(form && form.dataset.form==='transaction') updateLenderFieldVisibility(form);
   }
-  if(e.target.id==='purchase-market-select'){
-    const field = document.querySelector('[data-field="new-market"]');
-    const input = field ? field.querySelector('input[name=newMarketName]') : null;
-    const isNew = e.target.value==='__new__';
-    if(field) field.style.display = isNew ? '' : 'none';
-    if(input) input.required = isNew;
-    return;
-  }
-  if(e.target.classList.contains('pi-price')){ recomputePurchaseTotal(); return; }
 }
 function updateLenderFieldVisibility(form){
   if(!form) return;
@@ -1427,12 +1265,6 @@ function onShellClick(e){
     case 'remove-account': if(confirm('¿Eliminar cuenta?')) removeSpaceChild('accounts', id); break;
     case 'new-category': openModal(modalCategoryForm()); break;
     case 'remove-category': if(confirm('¿Eliminar categoría?')) removeSpaceChild('categories', id); break;
-    case 'new-market': openModal(modalMarketForm()); break;
-    case 'view-market': state.selectedMarketId = id; render(); break;
-    case 'back-to-markets': state.selectedMarketId = null; render(); break;
-    case 'delete-market': if(confirm('¿Eliminar este mercado? Las compras ya registradas no se borran, pero quedan sin mercado asociado.')) removeSpaceChild('markets', id); break;
-    case 'new-purchase': openModal(modalNewPurchase(a.dataset.marketId || null)); break;
-    case 'delete-purchase': if(confirm('¿Eliminar esta compra? También se va a borrar el gasto asociado.')) deletePurchase(id); break;
     case 'delete-space': deleteSpace(); break;
   }
 }
@@ -1441,16 +1273,6 @@ function onModalClick(e){
   if(e.target.id==='modal-inner') return;
   if(e.target.closest('[data-action="close-modal-backdrop"]') && e.target.classList.contains('modal-backdrop')){ closeModal(); return; }
   if(e.target.closest('[data-action="copy-link-modal"]')){ copyToClipboard(document.getElementById('share-url-input-modal').value); return; }
-  if(e.target.closest('[data-action="add-purchase-item"]')){
-    const list = document.getElementById('purchase-items-list');
-    if(list) list.insertAdjacentHTML('beforeend', purchaseItemRow());
-    return;
-  }
-  if(e.target.closest('[data-action="remove-purchase-item"]')){
-    const row = e.target.closest('.purchase-item-row');
-    if(row){ row.remove(); recomputePurchaseTotal(); }
-    return;
-  }
   const typeBtn = e.target.closest('[data-type]');
   if(typeBtn && typeBtn.closest('.type-toggle')){
     const form = typeBtn.closest('form');
@@ -1586,45 +1408,6 @@ async function onModalSubmit(e){
       const catData = { type: fd.get('type'), name: fd.get('name'), emoji: fd.get('emoji')||'🏷️' };
       if(fd.get('loan')==='on') catData.loan = true;
       await set(spaceRef('categories/'+uid(8)), catData);
-    }
-    if(formType==='market'){
-      await set(spaceRef('markets/'+uid(8)), { name: fd.get('name'), createdAt: serverTimestamp() });
-    }
-    if(formType==='purchase'){
-      const marketSelect = form.querySelector('#purchase-market-select');
-      let marketId = marketSelect.value;
-      let marketName;
-      const newMarketName = (fd.get('newMarketName')||'').trim();
-      if(marketId==='__new__'){
-        if(!newMarketName) throw new Error('Ingresá el nombre del mercado.');
-        marketId = uid(8);
-        marketName = newMarketName;
-        await set(spaceRef('markets/'+marketId), { name: marketName, createdAt: serverTimestamp() });
-      } else {
-        marketName = state.markets.find(x=>x.id===marketId)?.name || '';
-      }
-      const items = [];
-      form.querySelectorAll('.purchase-item-row').forEach(r=>{
-        const name = r.querySelector('.pi-name').value.trim();
-        const price = Number(r.querySelector('.pi-price').value)||0;
-        if(name) items.push({name, price});
-      });
-      const total = Number(fd.get('total')) || items.reduce((s,it)=>s+it.price,0);
-      if(!(total>0)) throw new Error('Ingresá el total de la compra.');
-      const purchaseId = uid(12);
-      const txId = uid(12);
-      await Promise.all([
-        set(spaceRef('purchases/'+purchaseId), {
-          marketId, items, total, date: fd.get('date'),
-          accountId: fd.get('accountId'), categoryId: fd.get('categoryId'),
-          txId, createdAt: serverTimestamp(),
-        }),
-        set(spaceRef('transactions/'+txId), {
-          type:'expense', amount: total, date: fd.get('date'), categoryId: fd.get('categoryId'),
-          accountId: fd.get('accountId'), toAccountId:null, memberId:null,
-          note: 'Compra en '+(marketName||'mercado'), marketPurchaseId: purchaseId, createdAt: serverTimestamp(),
-        }),
-      ]);
     }
     closeModal();
   }catch(err){
